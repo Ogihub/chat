@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instant Chat - Minimalist & Private</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }
+        #chat-window::-webkit-scrollbar { width: 4px; }
+        #chat-window::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="p-6 border-b flex justify-between items-center glass sticky top-0 z-10">
+        <div>
+            <h1 class="font-600 text-lg tracking-tight">Instant Chat</h1>
+            <p id="status" class="text-xs text-slate-400">Connecting to server...</p>
+        </div>
+        <div class="text-right">
+            <span class="text-[10px] uppercase tracking-widest text-slate-400">Your ID</span>
+            <p id="my-id" class="font-mono text-sm select-all cursor-pointer hover:text-blue-500 transition-colors" title="Click to copy">...</p>
+        </div>
+    </header>
+
+    <!-- Chat Area -->
+    <main id="chat-window" class="flex-1 overflow-y-auto p-6 space-y-4">
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="max-w-md mx-auto mt-20 text-center space-y-6">
+            <div class="space-y-2">
+                <p class="text-sm text-slate-500">To start a chat, paste your friend's ID below:</p>
+                <div class="flex gap-2">
+                    <input type="text" id="peer-id-input" placeholder="Friend's ID" 
+                           class="w-full px-4 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all">
+                    <button id="connect-btn" class="bg-slate-900 text-white px-6 py-2 rounded-xl hover:bg-slate-800 transition-all active:scale-95">Connect</button>
+                </div>
+            </div>
+            <div class="relative">
+                <div class="absolute inset-0 flex items-center"><span class="w-full border-t"></span></div>
+                <div class="relative flex justify-center text-xs uppercase"><span class="bg-slate-50 px-2 text-slate-400">Or</span></div>
+            </div>
+            <p class="text-xs text-slate-400 italic">Share your ID with a friend and wait for them to connect to you.</p>
+        </div>
+    </main>
+
+    <!-- Input Area (Hidden initially) -->
+    <footer id="input-area" class="p-4 border-t glass hidden">
+        <form id="message-form" class="max-w-4xl mx-auto flex gap-3">
+            <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off"
+                   class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all">
+            <button type="submit" class="bg-blue-600 text-white p-3 px-6 rounded-2xl hover:bg-blue-700 transition-all">Send</button>
+        </form>
+    </footer>
+
+    <script>
+        const chatWindow = document.getElementById('chat-window');
+        const myIdDisplay = document.getElementById('my-id');
+        const statusDisplay = document.getElementById('status');
+        const peerIdInput = document.getElementById('peer-id-input');
+        const connectBtn = document.getElementById('connect-btn');
+        const setupScreen = document.getElementById('setup-screen');
+        const inputArea = document.getElementById('input-area');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+
+        let peer;
+        let conn;
+
+        // Initialize PeerJS
+        function initPeer() {
+            peer = new Peer();
+
+            peer.on('open', (id) => {
+                myIdDisplay.innerText = id;
+                statusDisplay.innerText = "Ready to connect";
+                statusDisplay.classList.replace('text-slate-400', 'text-green-500');
+            });
+
+            // Handle incoming connections
+            peer.on('connection', (connection) => {
+                setupConnection(connection);
+            });
+
+            peer.on('error', (err) => {
+                console.error(err);
+                if (err.type === 'peer-allowed-not-found') {
+                    alert("ID not found. Please check the ID and try again.");
+                } else {
+                    alert("An error occurred: " + err.type);
+                }
+            });
+        }
+
+        // Setup connection listeners
+        function setupConnection(connection) {
+            conn = connection;
+
+            conn.on('open', () => {
+                statusDisplay.innerText = "Connected to: " + conn.peer;
+                setupScreen.classList.add('hidden');
+                inputArea.classList.remove('hidden');
+                addSystemMessage("Chat started. Messages are end-to-end and not stored.");
+            });
+
+            conn.on('data', (data) => {
+                addMessage(data, 'received');
+            });
+
+            conn.on('close', () => {
+                statusDisplay.innerText = "Connection closed";
+                statusDisplay.classList.replace('text-green-500', 'text-red-500');
+                inputArea.classList.add('hidden');
+                setupScreen.classList.remove('hidden');
+            });
+        }
+
+        // Connect button handler
+        connectBtn.addEventListener('click', () => {
+            const remoteId = peerIdInput.value.trim();
+            if (remoteId) {
+                const connection = peer.connect(remoteId);
+                setupConnection(connection);
+            }
+        });
+
+        // Send message handler
+        messageForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const msg = messageInput.value.trim();
+            if (msg && conn && conn.open) {
+                conn.send(msg);
+                addMessage(msg, 'sent');
+                messageInput.value = '';
+            }
+        });
+
+        // UI Helpers
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `flex ${type === 'sent' ? 'justify-end' : 'justify-start'}`;
+            
+            const innerDiv = document.createElement('div');
+            innerDiv.className = `max-w-[80%] px-4 py-2 rounded-2xl text-sm ${
+                type === 'sent' 
+                ? 'bg-blue-600 text-white rounded-tr-none' 
+                : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none shadow-sm'
+            }`;
+            innerDiv.innerText = text;
+            
+            div.appendChild(innerDiv);
+            chatWindow.appendChild(div);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        function addSystemMessage(text) {
+            const p = document.createElement('p');
+            p.className = "text-[10px] text-center uppercase tracking-widest text-slate-400 py-4";
+            p.innerText = text;
+            chatWindow.appendChild(p);
+        }
+
+        // Copy ID to clipboard
+        myIdDisplay.addEventListener('click', () => {
+            const id = myIdDisplay.innerText;
+            if(id !== "...") {
+                const el = document.createElement('textarea');
+                el.value = id;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+                
+                const originalText = myIdDisplay.innerText;
+                myIdDisplay.innerText = "Copied!";
+                setTimeout(() => myIdDisplay.innerText = originalText, 1000);
+            }
+        });
+
+        initPeer();
+    </script>
+</body>
+</html>
+
